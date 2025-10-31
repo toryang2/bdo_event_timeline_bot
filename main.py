@@ -5,14 +5,13 @@ from datetime import datetime, timedelta, timezone, time
 import os
 import json
 import asyncio
-from flask import Flask
-from threading import Thread
 
 # Bot configuration
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv(
+    "BOT_TOKEN")  # Discord bot token from environment variables
 API_URL = "https://api.garmoth.com/api/events?region=asia&lang=us"
 MESSAGE_FILE = "posted_messages.json"
-CHANNEL_FILE = "tracking_channels.json"
+CHANNEL_FILE = "tracking_channels.json"  # Stores channels where bot should post
 
 UTC_PLUS_8 = timezone(timedelta(hours=8))
 
@@ -20,21 +19,6 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Flask app for keeping the bot alive on Render
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "🤖 Garmoth Event Bot is running!"
-
-def run_flask():
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
-
-def keep_alive():
-    server = Thread(target=run_flask)
-    server.daemon = True
-    server.start()
 
 def to_kst(iso_str):
     """Convert UTC → UTC+8 (no adjustment)."""
@@ -46,6 +30,7 @@ def to_kst(iso_str):
     except Exception:
         return "No date"
 
+
 def to_kst_fixed_end(iso_str):
     """Convert UTC → UTC+8 and return as datetime object."""
     try:
@@ -55,6 +40,7 @@ def to_kst_fixed_end(iso_str):
         return local_time
     except Exception:
         return None
+
 
 def days_left_str(end_time):
     """Calculate days remaining until the event ends."""
@@ -70,6 +56,7 @@ def days_left_str(end_time):
     else:
         return f"{int(days_left)} days left"
 
+
 def load_tracking_channels():
     """Load channels where bot should post events."""
     if os.path.exists(CHANNEL_FILE):
@@ -82,10 +69,12 @@ def load_tracking_channels():
             pass
     return {}
 
+
 def save_tracking_channels(channels):
     """Save tracking channels to file."""
     with open(CHANNEL_FILE, "w") as f:
         json.dump(channels, f)
+
 
 def load_message_ids():
     """Load stored message IDs."""
@@ -99,10 +88,12 @@ def load_message_ids():
             pass
     return {}
 
+
 def save_message_ids(message_ids):
     """Save message IDs to file."""
     with open(MESSAGE_FILE, "w") as f:
         json.dump(message_ids, f)
+
 
 async def delete_previous_messages():
     """Delete all previously posted messages."""
@@ -128,6 +119,7 @@ async def delete_previous_messages():
 
     # Clear message IDs
     save_message_ids({})
+
 
 async def post_events():
     """Post events to all tracking channels."""
@@ -207,6 +199,7 @@ async def post_events():
 
     save_message_ids(message_ids)
 
+
 @bot.event
 async def on_ready():
     print(f'✅ Bot is online as {bot.user.name}')
@@ -216,31 +209,6 @@ async def on_ready():
     if not post_events_task.is_running():
         post_events_task.start()
 
-@bot.command()
-async def debug(ctx):
-    """Debug command to check what's happening"""
-    # Test API connection
-    scraper = cloudscraper.create_scraper()
-    resp = scraper.get(API_URL)
-    
-    if resp.status_code != 200:
-        await ctx.send(f"❌ API Error: Status {resp.status_code}")
-        return
-    
-    events = resp.json()
-    await ctx.send(f"✅ API Working: {len(events)} events found")
-    
-    # Show first 3 events for debugging
-    for i, e in enumerate(events[:3]):
-        end_at = e.get("end_at", "No end date")
-        await ctx.send(f"**Event {i+1}:** {e['title']}\nEnd: {end_at}")
-    
-    # Check tracking channels
-    channels = load_tracking_channels()
-    if channels:
-        await ctx.send(f"📋 Tracking {len(channels)} channel(s)")
-    else:
-        await ctx.send("❌ No channels set - use `!track` first")
 
 @bot.command()
 async def track(ctx):
@@ -254,6 +222,7 @@ async def track(ctx):
         description="This channel will now receive Garmoth event updates.",
         color=0x00ff00)
     await ctx.send(embed=embed)
+
 
 @bot.command()
 async def untrack(ctx):
@@ -270,6 +239,7 @@ async def untrack(ctx):
         color=0xff0000)
     await ctx.send(embed=embed)
 
+
 @bot.command()
 async def update(ctx):
     """Manually trigger event update"""
@@ -279,12 +249,10 @@ async def update(ctx):
     
     # Delete command message and status messages after a brief delay
     await asyncio.sleep(3)
-    try:
-        await ctx.message.delete()
-        await status_msg1.delete()
-        await status_msg2.delete()
-    except:
-        pass  # Ignore if messages are already deleted
+    await ctx.message.delete()
+    await status_msg1.delete()
+    await status_msg2.delete()
+
 
 @bot.command()
 async def info(ctx):
@@ -305,12 +273,13 @@ async def info(ctx):
         inline=False)
     await ctx.send(embed=embed)
 
+
 @tasks.loop(time=time(hour=16, minute=0))
 async def post_events_task():
     """Background task to update events at midnight UTC+8 (16:00 UTC)"""
     await post_events()
 
+
 # Run the bot
 if __name__ == "__main__":
-    keep_alive()  # Start Flask server to keep bot alive
     bot.run(BOT_TOKEN)
