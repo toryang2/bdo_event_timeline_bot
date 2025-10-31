@@ -4,8 +4,8 @@ import cloudscraper
 from datetime import datetime, timedelta, timezone
 import asyncio
 
-TOKEN = "YOUR_BOT_TOKEN_HERE"
-CHANNEL_ID = 123456789012345678  # <-- Replace with your channel ID
+TOKEN = "MTQzMzc1MzcyNDQ3NTQxMjQ4MA.GzUhbv.SDrl7v_lUD4qWpyNR67K8qNayHEjGDSo3HFBfQ"
+CHANNEL_ID = 1385559078801244180  # <-- Replace with your channel ID
 API_URL = "https://api.garmoth.com/api/events?region=asia&lang=us"
 
 UTC_PLUS_8 = timezone(timedelta(hours=8))
