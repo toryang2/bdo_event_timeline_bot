@@ -5,13 +5,14 @@ from datetime import datetime, timedelta, timezone, time
 import os
 import json
 import asyncio
+from flask import Flask
+from threading import Thread
 
 # Bot configuration
-BOT_TOKEN = os.getenv(
-    "BOT_TOKEN")  # Discord bot token from environment variables
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_URL = "https://api.garmoth.com/api/events?region=asia&lang=us"
 MESSAGE_FILE = "posted_messages.json"
-CHANNEL_FILE = "tracking_channels.json"  # Stores channels where bot should post
+CHANNEL_FILE = "tracking_channels.json"
 
 UTC_PLUS_8 = timezone(timedelta(hours=8))
 
@@ -19,7 +20,22 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+# Flask app for keeping the bot alive on Render
+app = Flask('')
 
+@app.route('/')
+def home():
+    return "🤖 Garmoth Event Bot is running!"
+
+def run_flask():
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    server = Thread(target=run_flask)
+    server.daemon = True
+    server.start()
+    
 def to_kst(iso_str):
     """Convert UTC → UTC+8 (no adjustment)."""
     try:
@@ -280,6 +296,7 @@ async def post_events_task():
     await post_events()
 
 
-# Run the bot
+# Run the bot with Flask server
 if __name__ == "__main__":
+    keep_alive()  # Start Flask server
     bot.run(BOT_TOKEN)

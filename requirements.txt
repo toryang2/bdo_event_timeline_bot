@@ -1,3 +1,2 @@
-requests
-cloudscraper
-discord.py
+discord.py>=2.3.0
+cloudscraper>=1.2.71
