@@ -139,6 +139,7 @@ async def delete_previous_messages():
 
 async def post_events():
     """Post events to all tracking channels."""
+    print("🔄 Starting to post events...")
     scraper = cloudscraper.create_scraper()
     resp = scraper.get(API_URL)
 
@@ -147,7 +148,10 @@ async def post_events():
         return
 
     events = resp.json()
+    print(f"📅 Fetched {len(events)} events from API")
+
     tracking_channels = load_tracking_channels()
+    print(f"📝 Tracking channels: {list(tracking_channels.keys())}")
 
     if not tracking_channels:
         print("ℹ️ No channels set for event tracking")
@@ -163,6 +167,8 @@ async def post_events():
         if not channel:
             print(f"⚠️ Channel {channel_id} not found")
             continue
+        else:
+            print(f"✅ Found channel: {channel.name} in {channel.guild.name}")
 
         # Initialize list to store all message IDs for this channel
         message_ids[str(channel_id)] = []
@@ -172,6 +178,7 @@ async def post_events():
 
             # Skip events without valid end date
             if not end_at or end_at in ["null", "None", None]:
+                print(f"⏩ Skipping event '{e['title']}' due to invalid end_at: {end_at}")
                 continue
 
             try:
@@ -179,14 +186,20 @@ async def post_events():
                 utc_time = datetime.strptime(end_at, "%Y-%m-%dT%H:%M:%S.%fZ")
                 # Filter out events ending on December 30, 2025 in UTC
                 if utc_time.date().isoformat() == "2025-12-30":
+                    print(f"⏩ Skipping event '{e['title']}' because it ends on 2025-12-30")
                     continue
 
                 # Now convert to UTC+8 for display
                 end_time = to_kst_fixed_end(end_at)
                 if not end_time:
+                    print(f"⏩ Skipping event '{e['title']}' due to time conversion error")
                     continue
-            except Exception:
+            except Exception as ex:
+                print(f"⏩ Skipping event '{e['title']}' due to exception: {ex}")
                 continue
+
+            # If we get here, we are going to post the event
+            print(f"✅ Posting event: {e['title']}")
 
             # Create embed
             days_text = days_left_str(end_time)
@@ -214,6 +227,7 @@ async def post_events():
         print(f"✅ Posted {count} events to #{channel.name}")
 
     save_message_ids(message_ids)
+    print("✅ Finished posting events")
 
 
 @bot.event
@@ -290,9 +304,10 @@ async def info(ctx):
     await ctx.send(embed=embed)
 
 
-@tasks.loop(time=time(minute=1))
+@tasks.loop(minutes=10)
 async def post_events_task():
-    """Background task to update events at midnight UTC+8 (16:00 UTC)"""
+    """Background task to update events every 10 minutes for testing"""
+    print("🔄 Running scheduled event update...")
     await post_events()
 
 
