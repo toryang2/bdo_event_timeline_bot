@@ -217,6 +217,32 @@ async def on_ready():
         post_events_task.start()
 
 @bot.command()
+async def debug(ctx):
+    """Debug command to check what's happening"""
+    # Test API connection
+    scraper = cloudscraper.create_scraper()
+    resp = scraper.get(API_URL)
+    
+    if resp.status_code != 200:
+        await ctx.send(f"❌ API Error: Status {resp.status_code}")
+        return
+    
+    events = resp.json()
+    await ctx.send(f"✅ API Working: {len(events)} events found")
+    
+    # Show first 3 events for debugging
+    for i, e in enumerate(events[:3]):
+        end_at = e.get("end_at", "No end date")
+        await ctx.send(f"**Event {i+1}:** {e['title']}\nEnd: {end_at}")
+    
+    # Check tracking channels
+    channels = load_tracking_channels()
+    if channels:
+        await ctx.send(f"📋 Tracking {len(channels)} channel(s)")
+    else:
+        await ctx.send("❌ No channels set - use `!track` first")
+
+@bot.command()
 async def track(ctx):
     """Set current channel for event tracking"""
     channels = load_tracking_channels()
