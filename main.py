@@ -139,82 +139,111 @@ async def delete_previous_messages():
 
 async def post_events():
     """Post events to all tracking channels."""
-    scraper = cloudscraper.create_scraper()
-    resp = scraper.get(API_URL)
+    print("🔄 Starting event posting process...")
+    
+    try:
+        # Create cloudscraper with additional options
+        scraper = cloudscraper.create_scraper(
+            browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'mobile': False
+            }
+        )
+        
+        # Add headers to look more like a real browser
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://garmoth.com/',
+            'Origin': 'https://garmoth.com'
+        }
+        
+        print("📡 Fetching events from Garmoth API...")
+        resp = scraper.get(API_URL, headers=headers, timeout=30)
+        
+        print(f"🔍 API Response Status: {resp.status_code}")
+        
+        if resp.status_code != 200:
+            print(f"❌ API Error: Status {resp.status_code}")
+            print(f"🔍 Response headers: {dict(resp.headers)}")
+            return
 
-    if resp.status_code != 200:
-        print("❌ Failed to fetch events from API")
-        return
+        events = resp.json()
+        print(f"✅ Received {len(events)} events from API")
+        
+        tracking_channels = load_tracking_channels()
 
-    events = resp.json()
-    tracking_channels = load_tracking_channels()
+        if not tracking_channels:
+            print("ℹ️ No channels set for event tracking")
+            return
 
-    if not tracking_channels:
-        print("ℹ️ No channels set for event tracking")
-        return
+        # Delete old messages first
+        await delete_previous_messages()
 
-    # Delete old messages first
-    await delete_previous_messages()
+        message_ids = {}
 
-    message_ids = {}
-
-    for channel_id in tracking_channels.keys():
-        channel = bot.get_channel(int(channel_id))
-        if not channel:
-            print(f"⚠️ Channel {channel_id} not found")
-            continue
-
-        # Initialize list to store all message IDs for this channel
-        message_ids[str(channel_id)] = []
-        count = 0
-        for e in events:
-            end_at = e.get("end_at")
-
-            # Skip events without valid end date
-            if not end_at or end_at in ["null", "None", None]:
+        for channel_id in tracking_channels.keys():
+            channel = bot.get_channel(int(channel_id))
+            if not channel:
+                print(f"⚠️ Channel {channel_id} not found")
                 continue
 
-            try:
-                # Parse UTC time first to check the date BEFORE timezone conversion
-                utc_time = datetime.strptime(end_at, "%Y-%m-%dT%H:%M:%S.%fZ")
-                # Filter out events ending on December 30, 2025 in UTC
-                if utc_time.date().isoformat() == "2025-12-30":
+            # Initialize list to store all message IDs for this channel
+            message_ids[str(channel_id)] = []
+            count = 0
+            for e in events:
+                end_at = e.get("end_at")
+
+                # Skip events without valid end date
+                if not end_at or end_at in ["null", "None", None]:
                     continue
 
-                # Now convert to UTC+8 for display
-                end_time = to_kst_fixed_end(end_at)
-                if not end_time:
+                try:
+                    # Parse UTC time first to check the date BEFORE timezone conversion
+                    utc_time = datetime.strptime(end_at, "%Y-%m-%dT%H:%M:%S.%fZ")
+                    # Filter out events ending on December 30, 2025 in UTC
+                    if utc_time.date().isoformat() == "2025-12-30":
+                        continue
+
+                    # Now convert to UTC+8 for display
+                    end_time = to_kst_fixed_end(end_at)
+                    if not end_time:
+                        continue
+                except Exception:
                     continue
-            except Exception:
-                continue
 
-            # Create embed
-            days_text = days_left_str(end_time)
-            start_date = to_kst(e.get("created_at", ""))
-            end_date = end_time.strftime("%Y-%m-%d %H:%M UTC+8")
+                # Create embed
+                days_text = days_left_str(end_time)
+                start_date = to_kst(e.get("created_at", ""))
+                end_date = end_time.strftime("%Y-%m-%d %H:%M UTC+8")
 
-            description = (f"🗓️ **[{e['title']}]({e['link']})**\n"
-                           f"━━━━━━━━━━━━━━━━━━\n"
-                           f"📅 **Start:** {start_date}\n"
-                           f"⏰ **End:** {end_date}\n"
-                           f"⏳ **{days_text}**\n"
-                           f"🌏 **Region:** {e['region'].upper()}\n")
+                description = (f"🗓️ **[{e['title']}]({e['link']})**\n"
+                               f"━━━━━━━━━━━━━━━━━━\n"
+                               f"📅 **Start:** {start_date}\n"
+                               f"⏰ **End:** {end_date}\n"
+                               f"⏳ **{days_text}**\n"
+                               f"🌏 **Region:** {e['region'].upper()}\n")
 
-            embed = discord.Embed(description=description, color=0x00b0f4)
-            embed.set_thumbnail(url=e["img"])
+                embed = discord.Embed(description=description, color=0x00b0f4)
+                embed.set_thumbnail(url=e["img"])
 
-            try:
-                msg = await channel.send(embed=embed)
-                message_ids[str(channel.id)].append(str(msg.id))
-                count += 1
-                await asyncio.sleep(1)  # Rate limiting
-            except Exception as e:
-                print(f"❌ Failed to post in {channel.name}: {e}")
+                try:
+                    msg = await channel.send(embed=embed)
+                    message_ids[str(channel.id)].append(str(msg.id))
+                    count += 1
+                    await asyncio.sleep(1)  # Rate limiting
+                except Exception as e:
+                    print(f"❌ Failed to post in {channel.name}: {e}")
 
-        print(f"✅ Posted {count} events to #{channel.name}")
+            print(f"✅ Posted {count} events to #{channel.name}")
 
-    save_message_ids(message_ids)
-
+        save_message_ids(message_ids)
+        print("🏁 Event posting completed!")
+        
+    except Exception as e:
+        print(f"❌ Error in post_events: {str(e)}")
 
 @bot.event
 async def on_ready():
@@ -258,9 +287,22 @@ async def untrack(ctx):
 @bot.command()
 async def update(ctx):
     """Manually trigger event update"""
-    status_msg = await ctx.send("🔄 Updating events...")
-    await post_events()
-    await status_msg.edit(content="✅ Events updated!")
+    try:
+        status_msg = await ctx.send("🔄 Updating events...")
+        
+        # Call post_events and check if it worked
+        await post_events()
+        
+        # Check if we have tracking channels set
+        tracking_channels = load_tracking_channels()
+        if not tracking_channels:
+            await status_msg.edit(content="❌ No channels set for tracking. Use `!track` first.")
+            return
+            
+        await status_msg.edit(content="✅ Events updated!")
+        
+    except Exception as e:
+        await ctx.send(f"❌ Error during update: {str(e)}")
 
 @bot.command()
 async def debug(ctx):
