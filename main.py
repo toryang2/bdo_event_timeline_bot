@@ -290,7 +290,7 @@ async def info(ctx):
     await ctx.send(embed=embed)
 
 
-@tasks.loop(time=time(hour=16, minute=0))
+@tasks.loop(time=time(minute=1))
 async def post_events_task():
     """Background task to update events at midnight UTC+8 (16:00 UTC)"""
     await post_events()
