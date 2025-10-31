@@ -262,7 +262,7 @@ async def update(ctx):
     await post_events()
     await status_msg.edit(content="✅ Events updated!")
 
-    @bot.command()
+@bot.command()
 async def debug(ctx):
     """Debug command to check what's happening"""
     # Test API connection
