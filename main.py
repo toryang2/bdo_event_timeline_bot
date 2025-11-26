@@ -1,18 +1,28 @@
 import discord
 from discord.ext import tasks, commands
-import cloudscraper
+import requests  # Remove cloudscraper
 from datetime import datetime, timedelta, timezone, time
 import os
 import json
 import asyncio
 from flask import Flask
 from threading import Thread
+import random
 
 # Bot configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_URL = "https://api.garmoth.com/api/events?region=asia&lang=us"
 MESSAGE_FILE = "posted_messages.json"
 CHANNEL_FILE = "tracking_channels.json"
+
+# Free CORS proxies that bypass Cloudflare
+FREE_CORS_PROXIES = [
+    "https://corsproxy.io/?",
+    "https://api.codetabs.com/v1/proxy?quest=",
+    "https://cors-anywhere.herokuapp.com/",
+    "https://thingproxy.freeboard.io/fetch/",
+    "https://cors.bridged.cc/",
+]
 
 UTC_PLUS_8 = timezone(timedelta(hours=8))
 
@@ -129,16 +139,56 @@ async def delete_previous_messages():
     # Clear message IDs
     save_message_ids({})
 
+def fetch_with_free_proxy(url):
+    """Try multiple free CORS proxies"""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    
+    # Shuffle proxies to distribute load
+    proxies = FREE_CORS_PROXIES.copy()
+    random.shuffle(proxies)
+    
+    for proxy_base in proxies:
+        try:
+            proxy_url = f"{proxy_base}{url}"
+            print(f"Trying proxy: {proxy_base}")
+            
+            response = requests.get(proxy_url, headers=headers, timeout=15)
+            
+            if response.status_code == 200:
+                print(f"✅ Success with {proxy_base}")
+                return response.json()
+            else:
+                print(f"❌ Proxy {proxy_base} failed: {response.status_code}")
+                
+        except Exception as e:
+            print(f"❌ Proxy {proxy_base} error: {e}")
+            continue
+    
+    return None
+
 async def post_events():
     """Post events to all tracking channels."""
-    scraper = cloudscraper.create_scraper()
-    resp = scraper.get(API_URL)
+    # Try free proxies first
+    events = fetch_with_free_proxy(API_URL)
+    
+    # If free proxies fail, try direct as last resort
+    if not events:
+        try:
+            print("Trying direct connection...")
+            response = requests.get(API_URL, timeout=30)
+            if response.status_code == 200:
+                events = response.json()
+            else:
+                print(f"❌ Direct API failed: {response.status_code}")
+                return
+        except Exception as e:
+            print(f"❌ All methods failed: {e}")
+            return
 
-    if resp.status_code != 200:
-        print("❌ Failed to fetch events from API")
-        return
-
-    events = resp.json()
     tracking_channels = load_tracking_channels()
 
     if not tracking_channels:
@@ -219,21 +269,26 @@ async def on_ready():
 @bot.command()
 async def debug(ctx):
     """Debug command to check what's happening"""
-    # Test API connection
-    scraper = cloudscraper.create_scraper()
-    resp = scraper.get(API_URL)
+    events = fetch_with_free_proxy(API_URL)
     
-    if resp.status_code != 200:
-        await ctx.send(f"❌ API Error: Status {resp.status_code}")
-        return
-    
-    events = resp.json()
-    await ctx.send(f"✅ API Working: {len(events)} events found")
-    
-    # Show first 3 events for debugging
-    for i, e in enumerate(events[:3]):
-        end_at = e.get("end_at", "No end date")
-        await ctx.send(f"**Event {i+1}:** {e['title']}\nEnd: {end_at}")
+    if events:
+        await ctx.send(f"✅ Free Proxy Working: {len(events)} events found")
+        
+        # Show first 3 events for debugging
+        for i, e in enumerate(events[:3]):
+            end_at = e.get("end_at", "No end date")
+            await ctx.send(f"**Event {i+1}:** {e['title']}\nEnd: {end_at}")
+    else:
+        # Try direct
+        try:
+            response = requests.get(API_URL, timeout=10)
+            if response.status_code == 200:
+                events = response.json()
+                await ctx.send(f"✅ Direct API Working: {len(events)} events found")
+            else:
+                await ctx.send(f"❌ All methods failed. Direct API: {response.status_code}")
+        except Exception as e:
+            await ctx.send(f"❌ All methods failed: {e}")
     
     # Check tracking channels
     channels = load_tracking_channels()
